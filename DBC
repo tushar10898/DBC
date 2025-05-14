@@ -308,16 +308,6 @@ class FolderCreatorApp(QWidget):
         plant_codes = {'BAO': '55', 'VAD': '33', 'CAS': '23', 'DAB': '32', 'FUJ': '56', 'GAS': '42', 'GRF': '41', 'PON': '22', 'CHE': '27'}
         return plant_codes.get(factory_name, 'XX')
     
-    def create_folder_structure(self):
-        """Create the folder structure based on user inputs."""
-        customer = self.customer_input.text()
-        country = self.country_dropdown.currentText()
-        factory = self.factory_dropdown.currentText()
-        scan_type = self.scan_type_dropdown.currentText()
-        component_type = self.component_dropdown.currentText()
-        blade_id = self.blade_id_input.text()
-        blade_type = self.blade_type_dropdown.currentText()
-        plant_code = self.get_plant_code(factory)
 
     def create_folder_structure(self):
         customer = self.customer_input.text()
@@ -412,17 +402,23 @@ class FolderCreatorApp(QWidget):
         log_window = LogWindow(self)
         log_area = log_window.log_area  # QTextEdit where we'll show logs
 
-        supplier = self.supplier_dropdown.currentText()
-        factory = self.factory_dropdown.currentText()
-        plant_code = self.get_plant_code(factory)
-        blade_id = self.blade_id_input.text()
-        blade_type = self.blade_type_dropdown.currentText()
+        # Factory location mapping
+        factory_location_map = {
+            "MX1": "Juarez",
+            "MX2": "Juarez",
+            "MX3": "Juarez",
+            "VAD": "Vadodara",
+            "BAO": "Baodi",
+            "CAS": "Castellon",
+            "PON": "Ponferrada",
+            "GAS": "Gaspe",
+            "GRF": "Grand forks",
+            "CHE": "Cherbourg",
+            "FUJ": "Fujian",
+            "DAB": "Debaspet"
+        }
 
-        # Construct Blade_ESN only if component type is Blade
-        if supplier == "TPI":
-            blade_esn = f"Blade_TPI-{blade_id}"
-        else:
-            blade_esn = f"{blade_id}-{blade_type}-{plant_code}"
+        metadata_generated = False
 
         # Filter only folders that start with "GE Vernova-"
         all_base_folders = [
@@ -432,48 +428,110 @@ class FolderCreatorApp(QWidget):
         ]
 
         for base_folder in all_base_folders:
-            for root, dirs, files in os.walk(base_folder):
-                has_media_files = any(file.lower().endswith(tuple(valid_extensions)) for file in files)
+            base_folder_name = os.path.basename(base_folder)
+            cust_country = base_folder_name.replace("GE Vernova-", "")
+            parts_split = cust_country.split("-", 1)
+            if len(parts_split) == 2:
+                customer, country = parts_split
+            else:
+                customer = "GE Vernova"
+                country = parts_split[0]
 
-                # Check if current folder is a leaf folder (no subdirectories)
+            for root, dirs, files in os.walk(base_folder):
+
+                # --- ✅ CHECK FOR "Ros" FOLDER AND .db3 FILES ---
+                if os.path.basename(root).lower() == "ros":
+                    has_db3_file = any(file.lower().endswith(".db3") for file in files)
+                    if has_db3_file:
+                        log_area.append(f"✅ ROSBAG file is Present in: {root}..")
+                    else:
+                        log_area.append(f"🛑 ROSBAG file is missing in: {root}. Can't generate metadata.")
+
+
+                has_media_files = any(file.lower().endswith(tuple(valid_extensions)) for file in files)
                 is_leaf_folder = not dirs  # No subdirectories means it's a leaf folder
 
                 if has_media_files:
-                    
-                    # Extract last folder name for 'sect'
-                    sect_folder = os.path.basename(root)
-                    current_dt = datetime.datetime.now().strftime("%-d/%-m/%y %H:%M") if os.name != 'nt' else datetime.datetime.now().strftime("%#d/%#m/%y %H:%M")
-
-                    metadata = {
-                        "sso": self.emp_id_input.text(),
-                        "datetime": current_dt,
-                        "cust": self.customer_input.text(),
-                        "supplier": self.supplier_dropdown.currentText(),
-                        "country": self.country_dropdown.currentText(),
-                        "factory": self.factory_dropdown.currentText(),
-                        "location": self.factory_location_dropdown.currentText(),
-                        "blade_id": self.blade_id_input.text(),
-                        "engine_type": self.blade_type_dropdown.currentText(),
-                        "plant_code": plant_code,
-                        "esn": blade_esn,
-                        "inspection_stage": self.stage_dropdown.currentText(),
-                        "sect": sect_folder,
-                        "comment": self.comment_input.text()
-                    }
-
                     metadata_file = os.path.join(root, "metadata.json")
+                    if os.path.exists(metadata_file):
+                        log_area.append(f"ℹ️ Metadata already exists in: {metadata_file} (Skipped)")
+                        continue  # Skip if metadata already exists
+
+                if has_media_files:
                     try:
+                        path_parts = os.path.normpath(root).split(os.sep)
+                        # Expecting structure: GE Vernova-XX / Factory_XXX / Blade_xxx / IIN-R-... / Stage / Subfolder
+                        # So index -5 should be 'Factory_XXX'
+                        factory_folder = path_parts[-5]
+                        if "_" in factory_folder:
+                            factory_code = factory_folder.split("_")[1].upper()
+                        else:
+                            factory_code = factory_folder.upper()
+                        factory = factory_folder.split("_", 1)[-1] if "_" in factory_folder else factory_folder
+                        location = factory_location_map.get(factory_code, "")
+                        sect_folder = os.path.basename(root)
+                        current_dt = datetime.datetime.now().strftime("%-d/%-m/%y %H:%M") if os.name != 'nt' else datetime.datetime.now().strftime("%#d/%#m/%y %H:%M")
+
+                        blade_folder = path_parts[-4]
+                        iin_folder = path_parts[-3]
+                        stage = path_parts[-2]
+
+                        if blade_folder.startswith("Blade_TPI-"):
+                            blade_id = blade_folder.replace("Blade_TPI-", "")
+                            supplier = "TPI"
+                            esn = f"TPI-{blade_id}"
+                            # Determine blade type based on starting digit
+                            if blade_id.startswith("6"):
+                                blade_type = "75.7"
+                            elif blade_id.startswith("5"):
+                                blade_type = "68.7"
+                            elif blade_id.startswith("4"):
+                                blade_type = "62.2"
+                            else:
+                                blade_type = ""
+                            plant_code = ""
+                        else:
+                            raw = blade_folder.replace("BLADE_", "").replace("Blade_", "")
+                            blade_parts = raw.split("-", 2)
+                            blade_id = blade_parts[0] if len(blade_parts) > 0 else ""
+                            blade_type = blade_parts[1] if len(blade_parts) > 1 else ""
+                            plant_code = blade_parts[2] if len(blade_parts) > 2 else ""
+                            supplier = "LM"
+                            esn = f"{blade_id}-{blade_type}-{plant_code}"
+
+
+
+                        metadata = {
+                            "sso": self.emp_id_input.text(),
+                             "datetime": current_dt,
+                            "cust": customer,
+                            "supplier": supplier,
+                            "country": country,
+                            "factory": factory,
+                            "location": location,
+                            "blade_id": blade_id,
+                            "engine_type": blade_type,
+                            "plant_code": plant_code if supplier == "LM" else "",
+                            "esn": esn,
+                            "inspection_stage": stage,
+                            "sect": sect_folder,
+                            "comment": self.comment_input.text()
+                        }
+
+                        metadata_file = os.path.join(root, "metadata.json")
                         with open(metadata_file, "w") as f:
                             json.dump(metadata, f, indent=4)
                         log_area.append(f"✅ Metadata created in: {metadata_file}")
-                        metadata_generated = True  # Mark that metadata was generated
+                        metadata_generated = True
+
                     except Exception as e:
-                        log_area.append(f"❌ Error creating metadata in {root}: {e}")
-                elif is_leaf_folder and 'ros' not in root.lower():  # Only log for leaf folders, excluding "ros" folder
+                        log_area.append(f"❌ Failed to extract metadata from folder path {root}: {e}")
+
+                elif is_leaf_folder and 'ros' not in root.lower():
                     log_area.append(f"⚠️ No media files found in: {root}")
-        
+
         if not metadata_generated:
-            log_area.append("❌ No metadata was generated for any folder.")           
+            log_area.append("❌ No metadata was generated for any folder.")
 
         # Show the popup window
         log_window.exec_()
