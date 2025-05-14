@@ -3,8 +3,17 @@ import os
 import json
 import datetime
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QFrame, QSizePolicy, QLineEdit, QTextEdit, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QTabWidget, QFormLayout, QDialog, QMessageBox
-from PyQt5.QtGui import QPixmap, QFont
+from PyQt5.QtGui import QPixmap, QFont, QIcon
 from PyQt5.QtCore import Qt, QTimer
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 class LogWindow(QDialog):
     def __init__(self, parent=None):
@@ -100,9 +109,12 @@ class FolderCreatorApp(QWidget):
         self.dbc_mate_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
         header_layout.addWidget(self.dbc_mate_label, alignment=Qt.AlignLeft)
 
+        # For icon
+        self.setWindowIcon(QIcon(resource_path("DBC_Mate_icon.ico")))
+
         # Logo on the right
         self.logo_label = QLabel(self)
-        pixmap = QPixmap("logo.png")
+        pixmap = QPixmap(resource_path("logo.png"))
         if not pixmap.isNull():
             self.logo_label.setPixmap(pixmap.scaled(200, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         self.logo_label.setAlignment(Qt.AlignRight)
