@@ -1,0 +1,4 @@
+pip install pyinstaller
+
+pyinstaller --onefile --windowed --icon=DBC_Mate_icon.ico --add-data "logo.png;." --add-data "DBC_Mate_icon.ico;." DBC
+
