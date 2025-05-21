@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import re
 import datetime
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QFrame, QSizePolicy, QLineEdit, QTextEdit, QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QTabWidget, QFormLayout, QDialog, QMessageBox
 from PyQt5.QtGui import QPixmap, QFont, QIcon
@@ -66,7 +67,7 @@ class FolderCreatorApp(QWidget):
             'GRF': ('Grand forks', 'United States'),
             'CHE': ('Cherbourg', 'France'),
             'FUJ': ('Fujian', 'China'),
-            'DAB': ('Debaspet', 'India')
+            'DAB': ('Dabaspet', 'India')
         }
 
         self.factory_blade_types = {
@@ -152,6 +153,7 @@ class FolderCreatorApp(QWidget):
         self.customer_label.setFont(label_font)
         self.customer_input = QLineEdit('GE Vernova')
         self.customer_input.setFont(normal_font)
+        self.customer_input.setReadOnly(True)
         layout.addWidget(self.customer_label)
         layout.addWidget(self.customer_input)
 
@@ -172,7 +174,7 @@ class FolderCreatorApp(QWidget):
         self.factory_dropdown = QComboBox()
         self.factory_dropdown.setFont(normal_font)
         self.factory_dropdown.setStyleSheet(dropdown_style)
-        self.factory_dropdown.addItems(['BAO', 'VAD', 'CAS', 'DAB', 'FUJ', 'GAS', 'GRF', 'PON', 'CHE'])
+        self.factory_dropdown.addItems(['BAO', 'VAD', 'CAS','CHE', 'DAB', 'FUJ', 'GAS', 'GRF', 'PON', 'DAB'])
         self.factory_dropdown.currentTextChanged.connect(self.update_location_country_blades)
         layout.addWidget(self.factory_label)
         layout.addWidget(self.factory_dropdown)
@@ -184,7 +186,8 @@ class FolderCreatorApp(QWidget):
         self.factory_location_dropdown.setFont(normal_font)
         self.factory_location_dropdown.setStyleSheet(dropdown_style)
         self.factory_location_dropdown.setEditable(False)
-        self.factory_location_dropdown.addItems(['Baodi', 'Castellon', 'Cherbourg', 'Dabaspet', 'Fujian', 'Gaspe', 'Grand forks', 'Juarez', 'Ponferrada', 'Vadodara'])
+        self.factory_location_dropdown.setDisabled(True)
+        self.factory_location_dropdown.addItems(['Baodi','Vadodara', 'Castellon', 'Cherbourg', 'Fujian', 'Gaspe', 'Grand forks', 'Ponferrada', 'Dabaspet', 'Juarez'])
         layout.addWidget(self.factory_location_label)
         layout.addWidget(self.factory_location_dropdown)
 
@@ -195,7 +198,8 @@ class FolderCreatorApp(QWidget):
         self.country_dropdown.setFont(normal_font)
         self.country_dropdown.setStyleSheet(dropdown_style)
         self.country_dropdown.setEditable(False)
-        self.country_dropdown.addItems(['China', 'Brazil', 'Canada', 'India', 'France', 'Mexico', 'Poland', 'Spain', 'Turkey', 'United States'])
+        self.country_dropdown.setDisabled(True)
+        self.country_dropdown.addItems(['China', 'India', 'Spain','France', 'CHINA', 'Canada', 'United States', 'Spain', 'INDIA', 'Mexico'])
         layout.addWidget(self.country_label)
         layout.addWidget(self.country_dropdown)
 
@@ -379,9 +383,8 @@ class FolderCreatorApp(QWidget):
         os.makedirs(stage_folder, exist_ok=True)
 
         # ✅ Add this after successful folder creation
-        self.create_button.setStyleSheet("background-color: green; color: white;")
-        self.create_button.setText("Success!")
-        QTimer.singleShot(500, self.reset_create_button)
+        QMessageBox.information(self, "Success", "Folder created successfully!")
+
 
 
         # Subfolders
@@ -395,15 +398,7 @@ class FolderCreatorApp(QWidget):
         msg.setIcon(QMessageBox.Critical)
         msg.setWindowTitle("Error")
         msg.setText(message)
-        msg.exec_()
-        self.create_button.setStyleSheet("background-color: red; color: white;")
-        self.create_button.setText("Error!")
-        QTimer.singleShot(500, self.reset_create_button)
-
-    def reset_create_button(self):
-        self.create_button.setStyleSheet("")
-        self.create_button.setText("Create Folder")
-           
+        msg.exec_()     
 
     def generate_metadata(self):
         """Generate metadata JSON in subfolders that contain images or videos."""
@@ -482,7 +477,7 @@ class FolderCreatorApp(QWidget):
                         factory = factory_folder.split("_", 1)[-1] if "_" in factory_folder else factory_folder
                         location = factory_location_map.get(factory_code, "")
                         sect_folder = os.path.basename(root)
-                        current_dt = datetime.datetime.now().strftime("%-d/%-m/%y %H:%M") if os.name != 'nt' else datetime.datetime.now().strftime("%#d/%#m/%y %H:%M")
+                        current_dt = datetime.datetime.now().strftime("%-m/%-d/%y %H:%M") if os.name != 'nt' else datetime.datetime.now().strftime("%#m/%#d/%y %H:%M")
 
                         blade_folder = path_parts[-4]
                         iin_folder = path_parts[-3]
@@ -490,6 +485,7 @@ class FolderCreatorApp(QWidget):
 
                         if blade_folder.startswith("Blade_TPI-"):
                             blade_id = blade_folder.replace("Blade_TPI-", "")
+                            blade_id = re.sub(r'_\d+$', '', blade_id)  # Remove _1, _2, etc.
                             supplier = "TPI"
                             esn = f"TPI-{blade_id}"
                             # Determine blade type based on starting digit
@@ -504,18 +500,28 @@ class FolderCreatorApp(QWidget):
                             plant_code = ""
                         else:
                             raw = blade_folder.replace("BLADE_", "").replace("Blade_", "")
-                            blade_parts = raw.split("-", 2)
-                            blade_id = blade_parts[0] if len(blade_parts) > 0 else ""
-                            blade_type = blade_parts[1] if len(blade_parts) > 1 else ""
-                            plant_code = blade_parts[2] if len(blade_parts) > 2 else ""
+                            raw = raw.strip()
+
+                            # Remove trailing _1, _2, etc. using regex
+                            raw = re.sub(r'_\d+$', '', raw)
+
+                            try:
+                                main_part, plant_code = raw.rsplit("-", 1)
+                                blade_id, blade_type = main_part.split("-", 1)
+                            except ValueError as e:
+                                log_area.append(f"❌ Failed to parse blade folder '{blade_folder}': {e}")
+                                blade_id = blade_type = plant_code = ""
+
                             supplier = "LM"
                             esn = f"{blade_id}-{blade_type}-{plant_code}"
 
 
 
                         metadata = {
+                            
+                            "app_type": "aerones",
                             "sso": self.emp_id_input.text(),
-                             "datetime": current_dt,
+                            "datetime": current_dt,
                             "cust": customer,
                             "supplier": supplier,
                             "country": country,
@@ -543,7 +549,7 @@ class FolderCreatorApp(QWidget):
                     log_area.append(f"⚠️ No media files found in: {root}")
 
         if not metadata_generated:
-            log_area.append("❌ No metadata was generated for any folder.")
+            log_area.append("❌ No metadata is generated for any other folder.")
 
         # Show the popup window
         log_window.exec_()
